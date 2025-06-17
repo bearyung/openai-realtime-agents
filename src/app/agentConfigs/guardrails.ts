@@ -24,9 +24,9 @@ export async function runGuardrailClassifier(
 
       <output_classes>
       - OFFENSIVE: Content that includes hate speech, discriminatory language, insults, slurs, or harassment.
-      - OFF_BRAND: Content that discusses competitors in a disparaging way.
+      - OFF_BRAND: Content that PROMOTES competitors or speaks POSITIVELY about competitor products. NOTE: Asking for authentication information (SSN last 4, credit card last 4, DOB, phone) for identity verification is NOT off-brand - it's standard security practice.
       - VIOLENCE: Content that includes explicit threats, incitement of harm, or graphic descriptions of physical injury or violence.
-      - NONE: If no other classes are appropriate and the message is fine.
+      - NONE: If no other classes are appropriate and the message is fine. This includes: politely informing customers we don't carry specific competitor items, asking for authentication/verification information, and standard customer service interactions.
       </output_classes>
       `,
     },
