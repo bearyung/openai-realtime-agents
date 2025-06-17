@@ -43,6 +43,11 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
 
   const historyHandlers = useHandleSessionHistory().current;
 
+  const lastRequestRef = useRef<any>(null);
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryCountRef = useRef<number>(0);
+  const MAX_RETRIES = 5;
+
   function handleTransportEvent(event: any) {
     // Handle additional server events that aren't managed by the session
     switch (event.type) {
@@ -56,6 +61,49 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
       }
       case "response.audio_transcript.delta": {
         historyHandlers.handleTranscriptionDelta(event);
+        break;
+      }
+      case "response.done": {
+        // Check for rate limit error
+        if (event.response?.status === "failed" && 
+            event.response?.status_details?.error?.code === "rate_limit_exceeded") {
+          
+          if (retryCountRef.current < MAX_RETRIES) {
+            retryCountRef.current++;
+            console.log(`Rate limit exceeded, retrying in 5 seconds... (Attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+            logServerEvent({
+              type: "rate_limit_retry",
+              message: `Rate limit exceeded, retrying in 5 seconds (Attempt ${retryCountRef.current}/${MAX_RETRIES})`
+            });
+            
+            // Clear any existing retry timeout
+            if (retryTimeoutRef.current) {
+              clearTimeout(retryTimeoutRef.current);
+            }
+            
+            // Retry after 5 seconds
+            retryTimeoutRef.current = setTimeout(() => {
+              if (sessionRef.current && lastRequestRef.current) {
+                console.log(`Retrying request after rate limit... (Attempt ${retryCountRef.current}/${MAX_RETRIES})`);
+                sessionRef.current.transport.sendEvent(lastRequestRef.current);
+              }
+            }, 5000);
+          } else {
+            console.error(`Rate limit exceeded - maximum retries (${MAX_RETRIES}) reached. Giving up.`);
+            logServerEvent({
+              type: "rate_limit_max_retries",
+              message: `Rate limit exceeded - maximum retries (${MAX_RETRIES}) reached. Request abandoned.`
+            });
+            // Reset retry count for future requests
+            retryCountRef.current = 0;
+          }
+        } else {
+          // Reset retry count on successful response
+          if (event.response?.status !== "failed") {
+            retryCountRef.current = 0;
+          }
+        }
+        logServerEvent(event);
         break;
       }
       default: {
@@ -106,6 +154,14 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
       // additional transport events
       sessionRef.current.on("transport_event", handleTransportEvent);
     }
+
+    // Cleanup on unmount
+    return () => {
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
   }, [sessionRef.current]);
 
   const connect = useCallback(
@@ -137,7 +193,7 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
             return pc;
           },
         }),
-        model: 'gpt-4o-realtime-preview-2025-06-03',
+        model: 'gpt-4o-mini-realtime-preview',
         config: {
           inputAudioFormat: audioFormat,
           outputAudioFormat: audioFormat,
@@ -156,6 +212,11 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   );
 
   const disconnect = useCallback(() => {
+    // Clear any pending retry timeout
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
     sessionRef.current?.close();
     sessionRef.current = null;
     updateStatus('DISCONNECTED');
@@ -173,10 +234,26 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
   
   const sendUserText = useCallback((text: string) => {
     assertconnected();
+    // Reset retry count for new request
+    retryCountRef.current = 0;
+    // Store the message as an event for potential retry
+    lastRequestRef.current = {
+      type: 'conversation.item.create',
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text }]
+      }
+    };
     sessionRef.current!.sendMessage(text);
   }, []);
 
   const sendEvent = useCallback((ev: any) => {
+    // Store the event for potential retry
+    if (ev.type === 'response.create' || ev.type === 'conversation.item.create') {
+      retryCountRef.current = 0; // Reset retry count for new request
+      lastRequestRef.current = ev;
+    }
     sessionRef.current?.transport.sendEvent(ev);
   }, []);
 
