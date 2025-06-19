@@ -41,7 +41,7 @@ Video walkthrough: [https://x.com/noahmacca/status/1927014156152058075](https://
 ```mermaid
 sequenceDiagram
     participant User
-    participant ChatAgent as Chat Agent<br/>(gpt-4o-realtime-mini)
+    participant ChatAgent as Chat Agent<br/>(gpt-4o-mini-realtime-preview)
     participant Supervisor as Supervisor Agent<br/>(gpt-4.1)
     participant Tool as Tool
 

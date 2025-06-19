@@ -11,7 +11,7 @@ export async function GET() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-realtime-mini",
+          model: "gpt-4o-mini-realtime-preview",
         }),
       }
     );
