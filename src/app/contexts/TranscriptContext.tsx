@@ -70,7 +70,7 @@ export const TranscriptProvider: FC<PropsWithChildren> = ({ children }) => {
         if (item.itemId === itemId && item.type === "MESSAGE") {
           return {
             ...item,
-            title: append ? (item.title ?? "") + newText : newText,
+            title: append ? ((item.title || "") + newText) : newText,
           };
         }
         return item;

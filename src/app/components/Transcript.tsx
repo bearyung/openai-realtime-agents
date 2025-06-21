@@ -35,6 +35,9 @@ function Transcript({
     status: string;
     timestamp: number;
   } | null>(null);
+  const [isAgentLoading, setIsAgentLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
+  const [lastStreamedMessageId, setLastStreamedMessageId] = useState<string | null>(null);
 
   function scrollToBottom() {
     if (transcriptRef.current) {
@@ -56,9 +59,27 @@ function Transcript({
       scrollToBottom();
     }
 
-    // Track function calls in customer UI mode
+    // Track function calls and agent loading in customer UI mode
     if (isCustomerUI) {
       const latestItems = [...transcriptItems].sort((a, b) => b.createdAtMs - a.createdAtMs);
+      
+      // Check for agent loading
+      const hasRecentAgentBreadcrumb = latestItems.some(item => 
+        item.type === "BREADCRUMB" && 
+        item.title?.startsWith("Agent:") && 
+        (Date.now() - item.createdAtMs) < 5000 // Within last 5 seconds
+      );
+      
+      // Check if we have a recent AI response
+      const hasRecentAIResponse = latestItems.some(item =>
+        item.type === "MESSAGE" &&
+        item.role === "assistant" &&
+        (Date.now() - item.createdAtMs) < 2000 // Within last 2 seconds
+      );
+      
+      setIsAgentLoading(hasRecentAgentBreadcrumb && !hasRecentAIResponse);
+      
+      // Track function calls
       for (const item of latestItems) {
         if (item.type === "BREADCRUMB" && item.title) {
           // Check for function call patterns (lowercase 'function call')
@@ -104,6 +125,35 @@ function Transcript({
     }
   }, [latestFunctionCall]);
 
+  // Streaming text effect for customer UI
+  useEffect(() => {
+    if (!isCustomerUI) return;
+    
+    const latest = getLatestAIResponse();
+    if (latest && latest.status === "DONE" && latest.itemId !== lastStreamedMessageId) {
+      const fullText = latest.title || "";
+      
+      // Mark this message as streamed
+      setLastStreamedMessageId(latest.itemId);
+      
+      // Reset and start streaming
+      setStreamingText("");
+      const words = fullText.split(' ');
+      let currentIndex = 0;
+      
+      const interval = setInterval(() => {
+        if (currentIndex < words.length) {
+          setStreamingText(prev => prev + (prev ? ' ' : '') + words[currentIndex]);
+          currentIndex++;
+        } else {
+          clearInterval(interval);
+        }
+      }, 80); // Adjust speed to sync with audio
+      
+      return () => clearInterval(interval);
+    }
+  }, [isCustomerUI, transcriptItems, lastStreamedMessageId]); // Re-run when transcript items change
+
   const handleCopyTranscript = async () => {
     if (!transcriptRef.current) return;
     try {
@@ -126,6 +176,13 @@ function Transcript({
   };
 
   const latestAIResponse = isCustomerUI ? getLatestAIResponse() : null;
+  
+  // Clear streaming text when agent is loading
+  useEffect(() => {
+    if (isAgentLoading) {
+      setStreamingText("");
+    }
+  }, [isAgentLoading]);
 
   return (
     <div className={`flex flex-col flex-1 bg-white min-h-0 ${isCustomerUI ? 'relative' : 'rounded-xl'}`}>
@@ -155,25 +212,27 @@ function Transcript({
         {/* Transcript Content */}
         {isCustomerUI ? (
           <div className="flex items-center justify-center h-full p-8">
-            {latestAIResponse ? (
-              <div className="max-w-3xl animate-fadeIn">
-                <div className={`p-8 bg-gradient-to-r from-blue-50 to-indigo-50 text-gray-800 shadow-xl rounded-3xl`}>
-                  <div className={`whitespace-pre-wrap text-2xl leading-relaxed`}>
-                    {latestAIResponse.status === "IN_PROGRESS" ? (
-                      <div className="flex items-center gap-4">
-                        <div className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 loading-pulse flex items-center justify-center">
-                          <div className="w-10 h-10 rounded-full bg-white/30 loading-glow"></div>
-                        </div>
-                        <span className="text-gray-600 animate-pulse">Thinking...</span>
-                      </div>
-                    ) : (
-                      <ReactMarkdown>{latestAIResponse.title || ""}</ReactMarkdown>
-                    )}
-                  </div>
+            {isAgentLoading || (latestAIResponse && latestAIResponse.status === "IN_PROGRESS") ? (
+              <div className="flex items-center gap-4 animate-fadeIn">
+                <div className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 loading-pulse flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-white/30 loading-glow"></div>
+                </div>
+                <span className="text-gray-600 text-2xl animate-pulse">Thinking...</span>
+              </div>
+            ) : latestAIResponse ? (
+              <div className="max-w-4xl px-8">
+                <div className={`whitespace-pre-wrap text-3xl leading-relaxed text-gray-800 font-light animate-fadeIn ${
+                  streamingText && streamingText !== (latestAIResponse.title || "") ? 'typewriter-cursor' : ''
+                }`}>
+                  <ReactMarkdown>{
+                    latestAIResponse.itemId === lastStreamedMessageId 
+                      ? (streamingText || latestAIResponse.title || "")
+                      : (latestAIResponse.title || "")
+                  }</ReactMarkdown>
                 </div>
               </div>
             ) : (
-              <div className="text-gray-400 text-xl">Waiting for response...</div>
+              <div className="text-gray-400 text-xl animate-pulse">Connecting to the next available agent...</div>
             )}
           </div>
         ) : (
