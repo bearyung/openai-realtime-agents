@@ -64,6 +64,16 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
         historyHandlers.handleTranscriptionDelta(event);
         break;
       }
+      case "response.cancelled": {
+        console.log(`[useRealtimeSession] response.cancelled - user interrupted`);
+        historyHandlers.handleInterrupt();
+        break;
+      }
+      case "conversation.item.truncated": {
+        console.log(`[useRealtimeSession] conversation.item.truncated - item was interrupted`);
+        historyHandlers.handleInterrupt();
+        break;
+      }
       case "response.content_part.done": {
         // Handle audio content parts that include transcripts
         if (event.part?.type === "audio" && event.part?.transcript) {
@@ -255,6 +265,8 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
 
   const interrupt = useCallback(() => {
     sessionRef.current?.interrupt();
+    // Also clear any pending text animations
+    historyHandlers.handleInterrupt();
   }, []);
   
   const sendUserText = useCallback((text: string) => {

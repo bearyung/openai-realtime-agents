@@ -95,8 +95,8 @@ function Transcript({
         const isRecent = (Date.now() - orderCompletionItem.createdAtMs) < 2000;
         if (isRecent) {
           // Start countdown
-          setCountdownValue(10);
-          let count = 10;
+          setCountdownValue(15);
+          let count = 15;
           countdownIntervalRef.current = setInterval(() => {
             count--;
             if (count <= 0) {
@@ -106,7 +106,7 @@ function Transcript({
             } else {
               setCountdownValue(count);
             }
-          }, 1000);
+          }, 15000);
         }
       }
       
@@ -442,7 +442,7 @@ function Transcript({
                   fill="none"
                   strokeDasharray={`${2 * Math.PI * 28}`}
                   strokeDashoffset={`${2 * Math.PI * 28 * (1 - countdownValue / 10)}`}
-                  className="transition-all duration-1000 ease-linear"
+                  className="transition-all duration-1500 ease-linear"
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">

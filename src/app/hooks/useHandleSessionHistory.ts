@@ -20,6 +20,7 @@ export function useHandleSessionHistory() {
   const processingDeltaRef = useRef(false);
   const deltaIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const activeDeltaItemsRef = useRef<Set<string>>(new Set());
+  const interruptedItemsRef = useRef<Set<string>>(new Set());
 
   // Process delta queue with throttling
   const processDeltaQueue = () => {
@@ -211,6 +212,16 @@ export function useHandleSessionHistory() {
         ? "[inaudible]"
         : item.transcript;
     if (itemId) {
+      // Check if this item was interrupted - if so, don't update with full transcript
+      if (interruptedItemsRef.current.has(itemId)) {
+        console.log(`[handleTranscriptionCompleted] Item ${itemId} was interrupted, not updating with full transcript`);
+        // Remove from interrupted set after handling
+        interruptedItemsRef.current.delete(itemId);
+        // Just update the status
+        updateTranscriptItem(itemId, { status: 'DONE' });
+        return;
+      }
+      
       // Check if deltas are still being processed for this item
       if (activeDeltaItemsRef.current.has(itemId)) {
         console.log(`[handleTranscriptionCompleted] Deltas still processing for itemId: ${itemId}, skipping final transcript update`);
@@ -267,6 +278,36 @@ export function useHandleSessionHistory() {
     }
   }
 
+  // Handle interrupt event - clear any pending deltas
+  function handleInterrupt() {
+    console.log("[handleInterrupt] Clearing delta queue and stopping animation");
+    
+    // Clear the delta queue to stop showing remaining words
+    const itemsBeingCleared = new Set(deltaQueueRef.current.map(d => d.itemId));
+    deltaQueueRef.current = [];
+    
+    // Stop the interval
+    if (deltaIntervalRef.current) {
+      clearInterval(deltaIntervalRef.current);
+      deltaIntervalRef.current = null;
+    }
+    processingDeltaRef.current = false;
+    
+    // Mark all items that were being animated as complete and track them as interrupted
+    itemsBeingCleared.forEach(itemId => {
+      updateTranscriptItem(itemId, { status: 'DONE' });
+      interruptedItemsRef.current.add(itemId);
+    });
+    
+    // Also mark any active delta items as interrupted
+    activeDeltaItemsRef.current.forEach(itemId => {
+      interruptedItemsRef.current.add(itemId);
+    });
+    
+    // Clear active items set
+    activeDeltaItemsRef.current.clear();
+  }
+
   const handlersRef = useRef({
     handleAgentToolStart,
     handleAgentToolEnd,
@@ -275,6 +316,7 @@ export function useHandleSessionHistory() {
     handleTranscriptionDelta,
     handleTranscriptionCompleted,
     handleGuardrailTripped,
+    handleInterrupt,
   });
 
   return handlersRef;
