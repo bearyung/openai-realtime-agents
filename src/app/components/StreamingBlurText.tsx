@@ -14,13 +14,8 @@ const StreamingBlurText: React.FC<StreamingBlurTextProps> = ({
   className = "",
   delay = 200,
 }) => {
-  // Initialize with full text if not streaming
-  const [displayedWordCount, setDisplayedWordCount] = useState(() => {
-    if (!isStreaming && text) {
-      return text.split(" ").filter(w => w.length > 0).length;
-    }
-    return 0;
-  });
+  // Always start from 0 to ensure animation plays from beginning
+  const [displayedWordCount, setDisplayedWordCount] = useState(0);
   const prevTextRef = useRef(text);
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 

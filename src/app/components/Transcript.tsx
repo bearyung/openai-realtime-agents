@@ -8,6 +8,7 @@ import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { DownloadIcon, ClipboardCopyIcon } from "@radix-ui/react-icons";
 import { GuardrailChip } from "./GuardrailChip";
 import StreamingBlurText from "./StreamingBlurText";
+import FadeOutText from "./FadeOutText";
 
 export interface TranscriptProps {
   userText: string;
@@ -43,6 +44,9 @@ function Transcript({
   const [countdownValue, setCountdownValue] = useState<number | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [persistedAIResponse, setPersistedAIResponse] = useState<string>("");
+  const [previousAIResponse, setPreviousAIResponse] = useState<string>("");
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  const lastResponseIdRef = useRef<string>("");
 
   function scrollToBottom() {
     if (transcriptRef.current) {
@@ -195,13 +199,40 @@ function Transcript({
 
   const latestAIResponse = getLatestAIResponse();
   
-  // Update persisted response whenever transcript items change
+  // Update persisted response and detect new responses
   useEffect(() => {
     const response = getLatestAIResponse();
-    if (response && response.title && response.title.trim() !== "") {
-      setPersistedAIResponse(response.title);
+    
+    if (response) {
+      // Check if this is a completely new response (different itemId)
+      if (response.itemId !== lastResponseIdRef.current) {
+        console.log(`New AI response detected: ${response.itemId}`);
+        
+        // If we have a previous response and it's not empty, trigger transition
+        if (persistedAIResponse && persistedAIResponse.trim() !== "") {
+          setPreviousAIResponse(persistedAIResponse);
+          setIsTransitioning(true);
+          
+          // After fade-out animation, update to new response
+          setTimeout(() => {
+            lastResponseIdRef.current = response.itemId;
+            setPersistedAIResponse(response.title || "");
+            setIsTransitioning(false);
+            setPreviousAIResponse("");
+          }, 200); // 200ms for fade-out animation
+        } else {
+          // First response or no previous response, no transition needed
+          setPersistedAIResponse(response.title || "");
+          lastResponseIdRef.current = response.itemId;
+        }
+      } else if (response.title && response.title.trim() !== "") {
+        // Same response, just update the text (for deltas)
+        if (!isTransitioning) {
+          setPersistedAIResponse(response.title);
+        }
+      }
     }
-  }, [transcriptItems]);
+  }, [transcriptItems, isTransitioning]);
   
   // Clear streaming state when agent is loading
   useEffect(() => {
@@ -248,19 +279,29 @@ function Transcript({
         {isCustomerUI ? (
           <div className="flex items-center h-full p-12">
             <div className="w-full">
-              {persistedAIResponse ? (
-                <div className="w-full max-w-5xl">
+              <div className="w-full max-w-5xl">
+                {/* Show fade-out animation for previous response */}
+                {isTransitioning && previousAIResponse && (
+                  <FadeOutText
+                    text={previousAIResponse}
+                    className="text-3xl leading-relaxed text-gray-800 font-light"
+                  />
+                )}
+                {/* Show current response - either transitioning in or stable */}
+                {!isTransitioning && persistedAIResponse && (
                   <StreamingBlurText
-                    key="customer-ui-streaming-text"
+                    key={`streaming-${lastResponseIdRef.current}`}
                     text={persistedAIResponse}
                     isStreaming={isStreaming || (latestAIResponse?.status === "IN_PROGRESS")}
                     className="text-3xl leading-relaxed text-gray-800 font-light"
                     delay={200}
                   />
-                </div>
-              ) : (
-                <div className="text-gray-400 text-xl animate-pulse">Connecting to the next available agent...</div>
-              )}
+                )}
+                {/* Only show connecting message if we have no responses at all */}
+                {!persistedAIResponse && !previousAIResponse && !isTransitioning && (
+                  <div className="text-gray-400 text-xl animate-pulse">Connecting to the next available agent...</div>
+                )}
+              </div>
             </div>
           </div>
         ) : (
