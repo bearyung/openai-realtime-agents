@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { useEvent } from "@/app/contexts/EventContext";
 
@@ -14,6 +14,52 @@ export function useHandleSessionHistory() {
   } = useTranscript();
 
   const { logServerEvent } = useEvent();
+  
+  // Delta queue system for throttled display
+  const deltaQueueRef = useRef<{ itemId: string; delta: string }[]>([]);
+  const processingDeltaRef = useRef(false);
+  const deltaIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const activeDeltaItemsRef = useRef<Set<string>>(new Set());
+
+  // Process delta queue with throttling
+  const processDeltaQueue = () => {
+    console.log(`[processDeltaQueue] Queue length: ${deltaQueueRef.current.length}`);
+    
+    if (deltaQueueRef.current.length === 0) {
+      console.log(`[processDeltaQueue] Queue empty, stopping interval`);
+      processingDeltaRef.current = false;
+      if (deltaIntervalRef.current) {
+        clearInterval(deltaIntervalRef.current);
+        deltaIntervalRef.current = null;
+      }
+      // Clear all active items when queue is empty
+      activeDeltaItemsRef.current.clear();
+      return;
+    }
+
+    const { itemId, delta } = deltaQueueRef.current.shift()!;
+    console.log(`[processDeltaQueue] Processing delta: "${delta}" for itemId: ${itemId}`);
+    
+    // Always append since message might already exist with empty text
+    console.log(`[processDeltaQueue] Appending delta to message`);
+    updateTranscriptMessage(itemId, delta, true);
+    
+    // Check if this was the last delta for this item
+    const hasMoreDeltasForItem = deltaQueueRef.current.some(d => d.itemId === itemId);
+    if (!hasMoreDeltasForItem) {
+      activeDeltaItemsRef.current.delete(itemId);
+      console.log(`[processDeltaQueue] No more deltas for itemId: ${itemId}, removing from active set`);
+    }
+  };
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (deltaIntervalRef.current) {
+        clearInterval(deltaIntervalRef.current);
+      }
+    };
+  }, []);
 
   /* ----------------------- helpers ------------------------- */
 
@@ -105,6 +151,7 @@ export function useHandleSessionHistory() {
         const failureDetails = JSON.parse(guardrailMessage);
         addTranscriptBreadcrumb('Output Guardrail Active', { details: failureDetails });
       } else {
+        console.log(`[handleHistoryAdded] Adding message - itemId: ${itemId}, role: ${role}, text: "${text}"`);
         addTranscriptMessage(itemId, role, text);
       }
     }
@@ -117,6 +164,12 @@ export function useHandleSessionHistory() {
 
       const { itemId, content = [] } = item;
 
+      // Skip if we're actively processing deltas for this item
+      if (activeDeltaItemsRef.current.has(itemId)) {
+        console.log(`[handleHistoryUpdated] Skipping update for itemId: ${itemId} - deltas in progress`);
+        return;
+      }
+
       const text = extractMessageText(content);
 
       if (text) {
@@ -128,8 +181,24 @@ export function useHandleSessionHistory() {
   function handleTranscriptionDelta(item: any) {
     const itemId = item.item_id;
     const deltaText = item.delta || "";
-    if (itemId) {
-      updateTranscriptMessage(itemId, deltaText, true);
+    console.log(`[handleTranscriptionDelta] itemId: ${itemId}, delta: "${deltaText}"`);
+    
+    if (itemId && deltaText) {
+      // Mark this item as actively receiving deltas
+      activeDeltaItemsRef.current.add(itemId);
+      
+      // Add to queue instead of processing immediately
+      deltaQueueRef.current.push({ itemId, delta: deltaText });
+      console.log(`[handleTranscriptionDelta] Queue length: ${deltaQueueRef.current.length}`);
+      
+      // Start processing if not already running
+      if (!processingDeltaRef.current) {
+        processingDeltaRef.current = true;
+        if (!deltaIntervalRef.current) {
+          console.log(`[handleTranscriptionDelta] Starting delta processing interval`);
+          deltaIntervalRef.current = setInterval(processDeltaQueue, 200); // 200ms between words
+        }
+      }
     }
   }
 
@@ -142,13 +211,27 @@ export function useHandleSessionHistory() {
         ? "[inaudible]"
         : item.transcript;
     if (itemId) {
+      // Check if deltas are still being processed for this item
+      if (activeDeltaItemsRef.current.has(itemId)) {
+        console.log(`[handleTranscriptionCompleted] Deltas still processing for itemId: ${itemId}, skipping final transcript update`);
+        // Just update the status
+        updateTranscriptItem(itemId, { status: 'DONE' });
+        return;
+      }
+      
+      // Clear any pending deltas for this item
+      deltaQueueRef.current = deltaQueueRef.current.filter(d => d.itemId !== itemId);
+      
+      // Check if we already have content for this item
+      const existingItem = transcriptItems.find((i) => i.itemId === itemId);
+      
+      // Always update with the final transcript to ensure we have the complete text
       updateTranscriptMessage(itemId, finalTranscript, false);
-      // Use the ref to get the latest transcriptItems
-      const transcriptItem = transcriptItems.find((i) => i.itemId === itemId);
+      
       updateTranscriptItem(itemId, { status: 'DONE' });
 
       // If guardrailResult still pending, mark PASS.
-      if (transcriptItem?.guardrailResult?.status === 'IN_PROGRESS') {
+      if (existingItem?.guardrailResult?.status === 'IN_PROGRESS') {
         updateTranscriptItem(itemId, {
           guardrailResult: {
             status: 'DONE',

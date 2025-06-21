@@ -15,6 +15,7 @@ export interface TranscriptProps {
   canSend: boolean;
   downloadRecording: () => void;
   isCustomerUI?: boolean;
+  onReconnect?: () => void;
 }
 
 function Transcript({
@@ -24,6 +25,7 @@ function Transcript({
   canSend,
   downloadRecording,
   isCustomerUI = false,
+  onReconnect,
 }: TranscriptProps) {
   const { transcriptItems, toggleTranscriptItemExpand } = useTranscript();
   const transcriptRef = useRef<HTMLDivElement | null>(null);
@@ -36,8 +38,9 @@ function Transcript({
     timestamp: number;
   } | null>(null);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-  const [lastStreamedMessageId, setLastStreamedMessageId] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [countdownValue, setCountdownValue] = useState<number | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   function scrollToBottom() {
     if (transcriptRef.current) {
@@ -77,7 +80,35 @@ function Transcript({
         (Date.now() - item.createdAtMs) < 2000 // Within last 2 seconds
       );
       
-      setIsAgentLoading(hasRecentAgentBreadcrumb && !hasRecentAIResponse);
+      // Don't show loading if we're already streaming
+      setIsAgentLoading(hasRecentAgentBreadcrumb && !hasRecentAIResponse && !isStreaming);
+      
+      // Check for order completion breadcrumb
+      const orderCompletionItem = latestItems.find(item =>
+        item.type === "BREADCRUMB" &&
+        (item.title?.startsWith("Order completed:") || item.title?.startsWith("Order ended:")) &&
+        !countdownValue && !countdownIntervalRef.current
+      );
+      
+      if (orderCompletionItem && countdownValue === null && !countdownIntervalRef.current) {
+        // Check if this is a new completion (within last 2 seconds)
+        const isRecent = (Date.now() - orderCompletionItem.createdAtMs) < 2000;
+        if (isRecent) {
+          // Start countdown
+          setCountdownValue(10);
+          let count = 10;
+          countdownIntervalRef.current = setInterval(() => {
+            count--;
+            if (count <= 0) {
+              clearInterval(countdownIntervalRef.current!);
+              countdownIntervalRef.current = null;
+              setCountdownValue(0); // 0 means show reload button
+            } else {
+              setCountdownValue(count);
+            }
+          }, 1000);
+        }
+      }
       
       // Track function calls
       for (const item of latestItems) {
@@ -125,34 +156,18 @@ function Transcript({
     }
   }, [latestFunctionCall]);
 
-  // Streaming text effect for customer UI
+  // Disable word-by-word streaming since we're getting deltas from the API
+  // The deltas already provide a natural streaming effect
   useEffect(() => {
     if (!isCustomerUI) return;
     
     const latest = getLatestAIResponse();
-    if (latest && latest.status === "DONE" && latest.itemId !== lastStreamedMessageId) {
-      const fullText = latest.title || "";
-      
-      // Mark this message as streamed
-      setLastStreamedMessageId(latest.itemId);
-      
-      // Reset and start streaming
-      setStreamingText("");
-      const words = fullText.split(' ');
-      let currentIndex = 0;
-      
-      const interval = setInterval(() => {
-        if (currentIndex < words.length) {
-          setStreamingText(prev => prev + (prev ? ' ' : '') + words[currentIndex]);
-          currentIndex++;
-        } else {
-          clearInterval(interval);
-        }
-      }, 80); // Adjust speed to sync with audio
-      
-      return () => clearInterval(interval);
+    if (latest && latest.status === "IN_PROGRESS") {
+      setIsStreaming(true);
+    } else if (latest && latest.status === "DONE") {
+      setIsStreaming(false);
     }
-  }, [isCustomerUI, transcriptItems, lastStreamedMessageId]); // Re-run when transcript items change
+  }, [isCustomerUI, transcriptItems]);
 
   const handleCopyTranscript = async () => {
     if (!transcriptRef.current) return;
@@ -177,12 +192,21 @@ function Transcript({
 
   const latestAIResponse = isCustomerUI ? getLatestAIResponse() : null;
   
-  // Clear streaming text when agent is loading
+  // Clear streaming state when agent is loading
   useEffect(() => {
     if (isAgentLoading) {
-      setStreamingText("");
+      setIsStreaming(false);
     }
   }, [isAgentLoading]);
+
+  // Cleanup countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className={`flex flex-col flex-1 bg-white min-h-0 ${isCustomerUI ? 'relative' : 'rounded-xl'}`}>
@@ -212,23 +236,12 @@ function Transcript({
         {/* Transcript Content */}
         {isCustomerUI ? (
           <div className="flex items-center justify-center h-full p-8">
-            {isAgentLoading || (latestAIResponse && latestAIResponse.status === "IN_PROGRESS") ? (
-              <div className="flex items-center gap-4 animate-fadeIn">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 loading-pulse flex items-center justify-center">
-                  <div className="w-10 h-10 rounded-full bg-white/30 loading-glow"></div>
-                </div>
-                <span className="text-gray-600 text-2xl animate-pulse">Thinking...</span>
-              </div>
-            ) : latestAIResponse ? (
+            {latestAIResponse ? (
               <div className="max-w-4xl px-8">
                 <div className={`whitespace-pre-wrap text-3xl leading-relaxed text-gray-800 font-light animate-fadeIn ${
-                  streamingText && streamingText !== (latestAIResponse.title || "") ? 'typewriter-cursor' : ''
+                  isStreaming ? 'typewriter-cursor' : ''
                 }`}>
-                  <ReactMarkdown>{
-                    latestAIResponse.itemId === lastStreamedMessageId 
-                      ? (streamingText || latestAIResponse.title || "")
-                      : (latestAIResponse.title || "")
-                  }</ReactMarkdown>
+                  <ReactMarkdown>{latestAIResponse.title || ""}</ReactMarkdown>
                 </div>
               </div>
             ) : (
@@ -405,6 +418,75 @@ function Transcript({
         </div>
       )}
 
+      {/* Countdown/Reload UI positioned above function call indicator */}
+      {isCustomerUI && countdownValue !== null && (
+        <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 animate-fadeIn z-10">
+          {countdownValue > 0 ? (
+            // Countdown circle
+            <div className="relative w-16 h-16">
+              <svg className="absolute inset-0 w-full h-full transform -rotate-90">
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  stroke="#e5e7eb"
+                  strokeWidth="4"
+                  fill="none"
+                />
+                <circle
+                  cx="32"
+                  cy="32"
+                  r="28"
+                  stroke="#6366f1"
+                  strokeWidth="4"
+                  fill="none"
+                  strokeDasharray={`${2 * Math.PI * 28}`}
+                  strokeDashoffset={`${2 * Math.PI * 28 * (1 - countdownValue / 10)}`}
+                  className="transition-all duration-1000 ease-linear"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xl font-bold text-gray-800">{countdownValue}</span>
+              </div>
+            </div>
+          ) : (
+            // Reload button
+            <div className="flex flex-col items-center gap-2">
+              <button
+                onClick={() => {
+                  // Clear countdown and interval
+                  setCountdownValue(null);
+                  if (countdownIntervalRef.current) {
+                    clearInterval(countdownIntervalRef.current);
+                    countdownIntervalRef.current = null;
+                  }
+                  if (onReconnect) {
+                    onReconnect();
+                  }
+                }}
+                className="p-3 rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
+              >
+                <svg
+                  className="w-8 h-8 text-gray-700"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                  />
+                </svg>
+              </button>
+              <p className="text-gray-600 text-xs">Start new order</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Function Call Status Panel for Customer UI */}
       {isCustomerUI && latestFunctionCall && (
         <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
@@ -425,6 +507,7 @@ function Transcript({
           </div>
         </div>
       )}
+
     </div>
   );
 }

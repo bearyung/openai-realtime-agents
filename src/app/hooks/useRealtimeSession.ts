@@ -60,7 +60,32 @@ export function useRealtimeSession(callbacks: RealtimeSessionCallbacks = {}) {
         break;
       }
       case "response.audio_transcript.delta": {
+        console.log(`[useRealtimeSession] response.audio_transcript.delta event:`, event);
         historyHandlers.handleTranscriptionDelta(event);
+        break;
+      }
+      case "response.content_part.done": {
+        // Handle audio content parts that include transcripts
+        if (event.part?.type === "audio" && event.part?.transcript) {
+          historyHandlers.handleTranscriptionCompleted({
+            item_id: event.item_id,
+            transcript: event.part.transcript
+          });
+        }
+        break;
+      }
+      case "response.output_item.done": {
+        // Handle completed output items with audio transcripts
+        if (event.item?.type === "message" && event.item?.content) {
+          const audioContent = event.item.content.find((c: any) => c.type === "audio" && c.transcript);
+          if (audioContent) {
+            console.log(`[response.output_item.done] Found audio transcript: "${audioContent.transcript}"`);
+            historyHandlers.handleTranscriptionCompleted({
+              item_id: event.item.id,
+              transcript: audioContent.transcript
+            });
+          }
+        }
         break;
       }
       case "response.done": {

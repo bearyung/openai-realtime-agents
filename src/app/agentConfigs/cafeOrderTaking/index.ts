@@ -399,7 +399,7 @@ export const cafeOrderTakingAgent = new RealtimeAgent({
           setTimeout(() => {
             console.log('[Disconnecting session after order completion]');
             disconnectSession();
-          }, 10000); // 10 second delay to ensure the thank you message is delivered
+          }, 15000); // 15 seconds delay to ensure the thank you message is delivered
         } else {
           console.log('[Warning] disconnectSession not found in context:', context);
         }

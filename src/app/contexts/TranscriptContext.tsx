@@ -68,9 +68,12 @@ export const TranscriptProvider: FC<PropsWithChildren> = ({ children }) => {
     setTranscriptItems((prev) =>
       prev.map((item) => {
         if (item.itemId === itemId && item.type === "MESSAGE") {
+          const oldTitle = item.title || "";
+          const newTitle = append ? (oldTitle + newText) : newText;
+          console.log(`[updateTranscriptMessage] itemId: ${itemId}, append: ${append}, old: "${oldTitle}", new: "${newText}", result: "${newTitle}"`);
           return {
             ...item,
-            title: append ? ((item.title || "") + newText) : newText,
+            title: newTitle,
           };
         }
         return item;

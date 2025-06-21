@@ -547,6 +547,12 @@ function App() {
             sessionStatus === "CONNECTED"
           }
           isCustomerUI={isCustomerUI}
+          onReconnect={isCustomerUI ? () => {
+            // Same action as clicking connect button
+            if (sessionStatus === "DISCONNECTED") {
+              connectToRealtime();
+            }
+          } : undefined}
         />
 
         {!isCustomerUI && <Events isExpanded={isEventsPaneExpanded} />}
