@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useTranscript } from "@/app/contexts/TranscriptContext";
 import { DownloadIcon, ClipboardCopyIcon } from "@radix-ui/react-icons";
 import { GuardrailChip } from "./GuardrailChip";
+import StreamingBlurText from "./StreamingBlurText";
 
 export interface TranscriptProps {
   userText: string;
@@ -106,7 +107,7 @@ function Transcript({
             } else {
               setCountdownValue(count);
             }
-          }, 15000);
+          }, 1000);
         }
       }
       
@@ -235,18 +236,21 @@ function Transcript({
 
         {/* Transcript Content */}
         {isCustomerUI ? (
-          <div className="flex items-center justify-center h-full p-8">
-            {latestAIResponse ? (
-              <div className="max-w-4xl px-8">
-                <div className={`whitespace-pre-wrap text-3xl leading-relaxed text-gray-800 font-light animate-fadeIn ${
-                  isStreaming ? 'typewriter-cursor' : ''
-                }`}>
-                  <ReactMarkdown>{latestAIResponse.title || ""}</ReactMarkdown>
+          <div className="flex items-center h-full p-12">
+            <div className="w-full">
+              {latestAIResponse ? (
+                <div className="w-full max-w-5xl">
+                  <StreamingBlurText
+                    text={latestAIResponse.title || ""}
+                    isStreaming={isStreaming || latestAIResponse.status === "IN_PROGRESS"}
+                    className="text-3xl leading-relaxed text-gray-800 font-light"
+                    delay={200}
+                  />
                 </div>
-              </div>
-            ) : (
-              <div className="text-gray-400 text-xl animate-pulse">Connecting to the next available agent...</div>
-            )}
+              ) : (
+                <div className="text-gray-400 text-xl animate-pulse">Connecting to the next available agent...</div>
+              )}
+            </div>
           </div>
         ) : (
           <div
@@ -441,8 +445,8 @@ function Transcript({
                   strokeWidth="4"
                   fill="none"
                   strokeDasharray={`${2 * Math.PI * 28}`}
-                  strokeDashoffset={`${2 * Math.PI * 28 * (1 - countdownValue / 10)}`}
-                  className="transition-all duration-1500 ease-linear"
+                  strokeDashoffset={`${2 * Math.PI * 28 * (1 - countdownValue / 15)}`}
+                  className="transition-all duration-1000 ease-linear"
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
