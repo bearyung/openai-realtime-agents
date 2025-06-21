@@ -42,6 +42,7 @@ function Transcript({
   const [isStreaming, setIsStreaming] = useState(false);
   const [countdownValue, setCountdownValue] = useState<number | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [persistedAIResponse, setPersistedAIResponse] = useState<string>("");
 
   function scrollToBottom() {
     if (transcriptRef.current) {
@@ -187,11 +188,20 @@ function Transcript({
     return sortedItems.find(item => 
       item.type === "MESSAGE" && 
       item.role === "assistant" && 
-      !item.isHidden
+      !item.isHidden &&
+      item.title && item.title.trim() !== "" // Ensure we have actual content
     );
   };
 
-  const latestAIResponse = isCustomerUI ? getLatestAIResponse() : null;
+  const latestAIResponse = getLatestAIResponse();
+  
+  // Update persisted response whenever transcript items change
+  useEffect(() => {
+    const response = getLatestAIResponse();
+    if (response && response.title && response.title.trim() !== "") {
+      setPersistedAIResponse(response.title);
+    }
+  }, [transcriptItems]);
   
   // Clear streaming state when agent is loading
   useEffect(() => {
@@ -238,11 +248,12 @@ function Transcript({
         {isCustomerUI ? (
           <div className="flex items-center h-full p-12">
             <div className="w-full">
-              {latestAIResponse ? (
+              {persistedAIResponse ? (
                 <div className="w-full max-w-5xl">
                   <StreamingBlurText
-                    text={latestAIResponse.title || ""}
-                    isStreaming={isStreaming || latestAIResponse.status === "IN_PROGRESS"}
+                    key="customer-ui-streaming-text"
+                    text={persistedAIResponse}
+                    isStreaming={isStreaming || (latestAIResponse?.status === "IN_PROGRESS")}
                     className="text-3xl leading-relaxed text-gray-800 font-light"
                     delay={200}
                   />

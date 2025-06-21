@@ -14,7 +14,13 @@ const StreamingBlurText: React.FC<StreamingBlurTextProps> = ({
   className = "",
   delay = 200,
 }) => {
-  const [displayedWordCount, setDisplayedWordCount] = useState(0);
+  // Initialize with full text if not streaming
+  const [displayedWordCount, setDisplayedWordCount] = useState(() => {
+    if (!isStreaming && text) {
+      return text.split(" ").filter(w => w.length > 0).length;
+    }
+    return 0;
+  });
   const prevTextRef = useRef(text);
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -30,7 +36,13 @@ const StreamingBlurText: React.FC<StreamingBlurTextProps> = ({
         // Clear all timeouts
         timeoutsRef.current.forEach(t => clearTimeout(t));
         timeoutsRef.current = [];
-        setDisplayedWordCount(0);
+        // Only reset if text is truly empty, not just shorter
+        if (text === "") {
+          setDisplayedWordCount(0);
+        } else {
+          // Keep displaying existing words up to the new length
+          setDisplayedWordCount(currentWords.length);
+        }
       } else if (currentWords.length > prevWords.length) {
         // Find newly added words
         const newWordStartIndex = prevWords.length;
