@@ -235,6 +235,7 @@ function App() {
           outputGuardrails: [guardrail],
           extraContext: {
             addTranscriptBreadcrumb,
+            disconnectSession: disconnectFromRealtime,
           },
         });
       } catch (err) {

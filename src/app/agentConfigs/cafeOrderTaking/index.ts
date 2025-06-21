@@ -61,6 +61,7 @@ Friendly and professional, like a neighborhood barista who remembers regular cus
 - Handle one item at a time to avoid confusion
 - Read back each item with selected modifiers
 - Always mention the total price before processing payment
+- CRITICAL: After processPayment succeeds, IMMEDIATELY call completeConversation with the orderId
 - Thank customers and let them know when their order will be ready
 
 # CRITICAL: Stay On Topic & Product Questions
@@ -91,7 +92,14 @@ Friendly and professional, like a neighborhood barista who remembers regular cus
 1. Customer orders item → getItemDetails(itemId) → addItemToOrder with correct IDs
 2. Customer asks total → getOrderSummary() 
 3. Customer ready to pay → getOrderSummary() first, then processPayment()
-4. NEVER skip these function calls or pretend they happened
+4. CRITICAL: When processPayment returns {"success": true, "orderId": "ORD-XXX"} → IMMEDIATELY call completeConversation(orderId='ORD-XXX', conversationOutcome='order_completed')
+5. If ending conversation without order → completeConversation(conversationOutcome='customer_left')
+6. NEVER skip these function calls or pretend they happened
+
+# Example Payment Flow:
+- processPayment returns: {"success": true, "orderId": "ORD-1000", "total": 17.82}
+- You MUST immediately call: completeConversation(orderId="ORD-1000", conversationOutcome="order_completed")
+- THEN say: "Thank you! Your order ORD-1000 will be ready in 5-10 minutes!"
 
 # CRITICAL: Never Forget Order Details
 - When customer says "plain bagel", ALWAYS use bagel-plain as the type
@@ -240,20 +248,22 @@ RIGHT:
     "instructions": [
       "Ask how they'd like to pay (card, cash, or mobile)",
       "Process payment with processPayment function",
+      "CRITICAL: When processPayment returns success=true, IMMEDIATELY call completeConversation with the orderId from the response and conversationOutcome='order_completed'",
       "Thank them for their order",
       "Let them know order will be ready in 5-10 minutes"
     ],
     "transitions": [{
       "next_step": "6_completion",
-      "condition": "Payment processed successfully"
+      "condition": "Payment processed and conversation completed"
     }]
   },
   {
     "id": "6_completion",
     "description": "Complete the order",
     "instructions": [
-      "Give them their order number",
-      "Thank them again",
+      "The completeConversation should already be called in step 5_payment",
+      "Give them their order number one more time",
+      "Thank them warmly",
       "Invite them to have a great day"
     ]
   },
@@ -284,7 +294,8 @@ RIGHT:
     "description": "End non-productive conversations",
     "instructions": [
       "Politely end the conversation",
-      "Suggest they return when ready to order"
+      "Suggest they return when ready to order",
+      "IMPORTANT: Call completeConversation function with conversationOutcome='customer_left'"
     ],
     "examples": [
       "I need to help other customers now. Please come back when you're ready to place an order. Have a great day!",
@@ -621,6 +632,66 @@ RIGHT:
           total: confirmedOrder.grandTotal,
           paymentMethod,
           estimatedTime: "5-10 minutes",
+        };
+      },
+    }),
+    
+    tool({
+      name: "completeConversation",
+      description: "Signal that the order conversation has been completed successfully",
+      parameters: {
+        type: "object",
+        properties: {
+          orderId: {
+            type: "string",
+            description: "The order ID that was completed",
+          },
+          conversationOutcome: {
+            type: "string",
+            enum: ["order_completed", "order_cancelled", "customer_left"],
+            description: "The outcome of the conversation",
+          },
+        },
+        required: ["conversationOutcome"],
+        additionalProperties: false,
+      },
+      execute: async (input: unknown, details: any) => {
+        const { orderId, conversationOutcome } = input as {
+          orderId?: string;
+          conversationOutcome: 'order_completed' | 'order_cancelled' | 'customer_left';
+        };
+        
+        console.log(`[Order Conversation Completed] Outcome: ${conversationOutcome}, Order ID: ${orderId || 'N/A'}`);
+        
+        // Access context from the details.context property
+        const context = details?.context;
+        console.log('[CompleteConversation] Context keys:', context ? Object.keys(context) : 'No context');
+        console.log('[CompleteConversation] Full context:', context);
+        
+        // Add a breadcrumb to show the conversation is complete
+        const addTranscriptBreadcrumb = context?.addTranscriptBreadcrumb;
+        if (addTranscriptBreadcrumb) {
+          addTranscriptBreadcrumb(
+            `Order ${conversationOutcome === 'order_completed' ? 'completed' : 'ended'}: ${orderId || 'No order'}`,
+            { outcome: conversationOutcome, orderId }
+          );
+        }
+        
+        // Disconnect the session after a short delay to allow the final message to be sent
+        const disconnectSession = context?.disconnectSession;
+        if (disconnectSession) {
+          setTimeout(() => {
+            console.log('[Disconnecting session after order completion]');
+            disconnectSession();
+          }, 10000); // 2 second delay to ensure the thank you message is delivered
+        } else {
+          console.log('[Warning] disconnectSession not found in context:', context);
+        }
+        
+        return {
+          success: true,
+          message: `Conversation marked as ${conversationOutcome}`,
+          timestamp: new Date().toISOString(),
         };
       },
     }),
