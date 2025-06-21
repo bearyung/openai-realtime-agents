@@ -14,6 +14,7 @@ export interface TranscriptProps {
   onSendMessage: () => void;
   canSend: boolean;
   downloadRecording: () => void;
+  isCustomerUI?: boolean;
 }
 
 function Transcript({
@@ -22,12 +23,18 @@ function Transcript({
   onSendMessage,
   canSend,
   downloadRecording,
+  isCustomerUI = false,
 }: TranscriptProps) {
   const { transcriptItems, toggleTranscriptItemExpand } = useTranscript();
   const transcriptRef = useRef<HTMLDivElement | null>(null);
   const [prevLogs, setPrevLogs] = useState<TranscriptItem[]>([]);
   const [justCopied, setJustCopied] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [latestFunctionCall, setLatestFunctionCall] = useState<{
+    name: string;
+    status: string;
+    timestamp: number;
+  } | null>(null);
 
   function scrollToBottom() {
     if (transcriptRef.current) {
@@ -49,8 +56,36 @@ function Transcript({
       scrollToBottom();
     }
 
+    // Track function calls in customer UI mode
+    if (isCustomerUI) {
+      const latestItems = [...transcriptItems].sort((a, b) => b.createdAtMs - a.createdAtMs);
+      for (const item of latestItems) {
+        if (item.type === "BREADCRUMB" && item.title) {
+          // Check for function call patterns (lowercase 'function call')
+          const functionCallMatch = item.title.match(/function call: (\w+)/);
+          const functionResultMatch = item.title.match(/function call result: (\w+)/);
+          
+          if (functionCallMatch) {
+            setLatestFunctionCall({
+              name: functionCallMatch[1],
+              status: 'calling',
+              timestamp: item.createdAtMs
+            });
+            break;
+          } else if (functionResultMatch) {
+            setLatestFunctionCall({
+              name: functionResultMatch[1],
+              status: 'success',
+              timestamp: item.createdAtMs
+            });
+            break;
+          }
+        }
+      }
+    }
+
     setPrevLogs(transcriptItems);
-  }, [transcriptItems]);
+  }, [transcriptItems, isCustomerUI]);
 
   // Autofocus on text box input on load
   useEffect(() => {
@@ -58,6 +93,16 @@ function Transcript({
       inputRef.current.focus();
     }
   }, [canSend]);
+
+  // Auto-hide function call status after 3 seconds
+  useEffect(() => {
+    if (latestFunctionCall) {
+      const timer = setTimeout(() => {
+        setLatestFunctionCall(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [latestFunctionCall]);
 
   const handleCopyTranscript = async () => {
     if (!transcriptRef.current) return;
@@ -70,34 +115,72 @@ function Transcript({
     }
   };
 
+  // Get the latest AI response for customer UI
+  const getLatestAIResponse = () => {
+    const sortedItems = [...transcriptItems].sort((a, b) => b.createdAtMs - a.createdAtMs);
+    return sortedItems.find(item => 
+      item.type === "MESSAGE" && 
+      item.role === "assistant" && 
+      !item.isHidden
+    );
+  };
+
+  const latestAIResponse = isCustomerUI ? getLatestAIResponse() : null;
+
   return (
-    <div className="flex flex-col flex-1 bg-white min-h-0 rounded-xl">
+    <div className={`flex flex-col flex-1 bg-white min-h-0 ${isCustomerUI ? 'relative' : 'rounded-xl'}`}>
       <div className="flex flex-col flex-1 min-h-0">
-        <div className="flex items-center justify-between px-6 py-3 sticky top-0 z-10 text-base border-b bg-white rounded-t-xl">
-          <span className="font-semibold">Transcript</span>
-          <div className="flex gap-x-2">
-            <button
-              onClick={handleCopyTranscript}
-              className="w-24 text-sm px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300 flex items-center justify-center gap-x-1"
-            >
-              <ClipboardCopyIcon />
-              {justCopied ? "Copied!" : "Copy"}
-            </button>
-            <button
-              onClick={downloadRecording}
-              className="w-40 text-sm px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300 flex items-center justify-center gap-x-1"
-            >
-              <DownloadIcon />
-              <span>Download Audio</span>
-            </button>
+        {!isCustomerUI && (
+          <div className="flex items-center justify-between px-6 py-3 sticky top-0 z-10 text-base border-b bg-white rounded-t-xl">
+            <span className="font-semibold">Transcript</span>
+            <div className="flex gap-x-2">
+              <button
+                onClick={handleCopyTranscript}
+                className="w-24 text-sm px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300 flex items-center justify-center gap-x-1"
+              >
+                <ClipboardCopyIcon />
+                {justCopied ? "Copied!" : "Copy"}
+              </button>
+              <button
+                onClick={downloadRecording}
+                className="w-40 text-sm px-3 py-1 rounded-md bg-gray-200 hover:bg-gray-300 flex items-center justify-center gap-x-1"
+              >
+                <DownloadIcon />
+                <span>Download Audio</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Transcript Content */}
-        <div
-          ref={transcriptRef}
-          className="overflow-auto p-4 flex flex-col gap-y-4 h-full"
-        >
+        {isCustomerUI ? (
+          <div className="flex items-center justify-center h-full p-8">
+            {latestAIResponse ? (
+              <div className="max-w-3xl animate-fadeIn">
+                <div className={`p-8 bg-gradient-to-r from-blue-50 to-indigo-50 text-gray-800 shadow-xl rounded-3xl`}>
+                  <div className={`whitespace-pre-wrap text-2xl leading-relaxed`}>
+                    {latestAIResponse.status === "IN_PROGRESS" ? (
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 loading-pulse flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-full bg-white/30 loading-glow"></div>
+                        </div>
+                        <span className="text-gray-600 animate-pulse">Thinking...</span>
+                      </div>
+                    ) : (
+                      <ReactMarkdown>{latestAIResponse.title || ""}</ReactMarkdown>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-gray-400 text-xl">Waiting for response...</div>
+            )}
+          </div>
+        ) : (
+          <div
+            ref={transcriptRef}
+            className={`overflow-auto flex flex-col gap-y-4 h-full p-4`}
+          >
           {[...transcriptItems]
             .sort((a, b) => a.createdAtMs - b.createdAtMs)
             .map((item) => {
@@ -111,9 +194,15 @@ function Transcript({
                 title = "",
                 isHidden,
                 guardrailResult,
+                status,
               } = item;
 
             if (isHidden) {
+              return null;
+            }
+
+            // Hide user messages in customer UI
+            if (isCustomerUI && type === "MESSAGE" && role === "user") {
               return null;
             }
 
@@ -122,9 +211,13 @@ function Transcript({
               const containerClasses = `flex justify-end flex-col ${
                 isUser ? "items-end" : "items-start"
               }`;
-              const bubbleBase = `max-w-lg p-3 ${
-                isUser ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-black"
-              }`;
+              const bubbleBase = isCustomerUI
+                ? `max-w-2xl p-6 ${
+                    isUser ? "bg-gray-900 text-gray-100" : "bg-gradient-to-r from-blue-50 to-indigo-50 text-gray-800 shadow-lg"
+                  }`
+                : `max-w-lg p-3 ${
+                    isUser ? "bg-gray-900 text-gray-100" : "bg-gray-100 text-black"
+                  }`;
               const isBracketedMessage =
                 title.startsWith("[") && title.endsWith("]");
               const messageStyle = isBracketedMessage
@@ -136,21 +229,34 @@ function Transcript({
 
               return (
                 <div key={itemId} className={containerClasses}>
-                  <div className="max-w-lg">
+                  <div className={isCustomerUI ? "max-w-2xl" : "max-w-lg"}>
                     <div
                       className={`${bubbleBase} rounded-t-xl ${
                         guardrailResult ? "" : "rounded-b-xl"
-                      }`}
+                      } ${isCustomerUI ? "rounded-2xl animate-fadeIn" : ""}`}
                     >
-                      <div
-                        className={`text-xs ${
-                          isUser ? "text-gray-400" : "text-gray-500"
-                        } font-mono`}
-                      >
-                        {timestamp}
-                      </div>
-                      <div className={`whitespace-pre-wrap ${messageStyle}`}>
-                        <ReactMarkdown>{displayTitle}</ReactMarkdown>
+                      {!isCustomerUI && (
+                        <div
+                          className={`text-xs ${
+                            isUser ? "text-gray-400" : "text-gray-500"
+                          } font-mono`}
+                        >
+                          {timestamp}
+                        </div>
+                      )}
+                      <div className={`whitespace-pre-wrap ${messageStyle} ${
+                        isCustomerUI ? "text-xl leading-relaxed" : ""
+                      }`}>
+                        {status === "IN_PROGRESS" && !isUser && isCustomerUI ? (
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-r from-blue-400 to-indigo-500 loading-pulse flex items-center justify-center">
+                              <div className="w-8 h-8 rounded-full bg-white/30 loading-glow"></div>
+                            </div>
+                            <span className="text-gray-600 animate-pulse">Thinking...</span>
+                          </div>
+                        ) : (
+                          <ReactMarkdown>{displayTitle}</ReactMarkdown>
+                        )}
                       </div>
                     </div>
                     {guardrailResult && (
@@ -165,20 +271,22 @@ function Transcript({
               return (
                 <div
                   key={itemId}
-                  className="flex flex-col justify-start items-start text-gray-500 text-sm"
+                  className={`flex flex-col justify-start items-start ${
+                    isCustomerUI ? "text-gray-600 text-base" : "text-gray-500 text-sm"
+                  }`}
                 >
-                  <span className="text-xs font-mono">{timestamp}</span>
+                  {!isCustomerUI && <span className="text-xs font-mono">{timestamp}</span>}
                   <div
-                    className={`whitespace-pre-wrap flex items-center font-mono text-sm text-gray-800 ${
-                      data ? "cursor-pointer" : ""
-                    }`}
+                    className={`whitespace-pre-wrap flex items-center ${
+                      isCustomerUI ? "text-lg text-gray-700" : "font-mono text-sm text-gray-800"
+                    } ${data ? "cursor-pointer" : ""}`}
                     onClick={() => data && toggleTranscriptItemExpand(itemId)}
                   >
                     {data && (
                       <span
-                        className={`text-gray-400 mr-1 transform transition-transform duration-200 select-none font-mono ${
-                          expanded ? "rotate-90" : "rotate-0"
-                        }`}
+                        className={`text-gray-400 mr-1 transform transition-transform duration-200 select-none ${
+                          !isCustomerUI ? "font-mono" : ""
+                        } ${expanded ? "rotate-90" : "rotate-0"}`}
                       >
                         ▶
                       </span>
@@ -187,7 +295,9 @@ function Transcript({
                   </div>
                   {expanded && data && (
                     <div className="text-gray-800 text-left">
-                      <pre className="border-l-2 ml-1 border-gray-200 whitespace-pre-wrap break-words font-mono text-xs mb-2 mt-2 pl-2">
+                      <pre className={`border-l-2 ml-1 border-gray-200 whitespace-pre-wrap break-words ${
+                        isCustomerUI ? "text-sm" : "font-mono text-xs"
+                      } mb-2 mt-2 pl-2`}>
                         {JSON.stringify(data, null, 2)}
                       </pre>
                     </div>
@@ -207,31 +317,55 @@ function Transcript({
               );
             }
           })}
-        </div>
+          </div>
+        )}
       </div>
 
-      <div className="p-4 flex items-center gap-x-2 flex-shrink-0 border-t border-gray-200">
-        <input
-          ref={inputRef}
-          type="text"
-          value={userText}
-          onChange={(e) => setUserText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && canSend) {
-              onSendMessage();
-            }
-          }}
-          className="flex-1 px-4 py-2 focus:outline-none"
-          placeholder="Type a message..."
-        />
-        <button
-          onClick={onSendMessage}
-          disabled={!canSend || !userText.trim()}
-          className="bg-gray-900 text-white rounded-full px-2 py-2 disabled:opacity-50"
-        >
-          <Image src="arrow.svg" alt="Send" width={24} height={24} />
-        </button>
-      </div>
+      {!isCustomerUI && (
+        <div className="p-4 flex items-center gap-x-2 flex-shrink-0 border-t border-gray-200">
+          <input
+            ref={inputRef}
+            type="text"
+            value={userText}
+            onChange={(e) => setUserText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && canSend) {
+                onSendMessage();
+              }
+            }}
+            className="flex-1 px-4 py-2 focus:outline-none"
+            placeholder="Type a message..."
+          />
+          <button
+            onClick={onSendMessage}
+            disabled={!canSend || !userText.trim()}
+            className="bg-gray-900 text-white rounded-full px-2 py-2 disabled:opacity-50"
+          >
+            <Image src="arrow.svg" alt="Send" width={24} height={24} />
+          </button>
+        </div>
+      )}
+
+      {/* Function Call Status Panel for Customer UI */}
+      {isCustomerUI && latestFunctionCall && (
+        <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2">
+          <div className="bg-gray-800 text-white px-6 py-3 rounded-full shadow-lg animate-fadeIn">
+            <div className="flex items-center gap-2">
+              {latestFunctionCall.status === 'calling' ? (
+                <>
+                  <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
+                  <span className="text-sm">Function call: {latestFunctionCall.name}</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                  <span className="text-sm">Function call: {latestFunctionCall.name} [success]</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

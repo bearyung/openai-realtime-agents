@@ -119,6 +119,13 @@ function App() {
       return stored ? stored === 'true' : true;
     },
   );
+  const [isCustomerUI, setIsCustomerUI] = useState<boolean>(
+    () => {
+      if (typeof window === 'undefined') return false;
+      const stored = localStorage.getItem('customerUI');
+      return stored ? stored === 'true' : false;
+    },
+  );
 
   // Initialize the recording hook.
   const { startRecording, stopRecording, downloadRecording } =
@@ -369,6 +376,10 @@ function App() {
     if (storedAudioPlaybackEnabled) {
       setIsAudioPlaybackEnabled(storedAudioPlaybackEnabled === "true");
     }
+    const storedCustomerUI = localStorage.getItem("customerUI");
+    if (storedCustomerUI) {
+      setIsCustomerUI(storedCustomerUI === "true");
+    }
   }, []);
 
   useEffect(() => {
@@ -385,6 +396,10 @@ function App() {
       isAudioPlaybackEnabled.toString()
     );
   }, [isAudioPlaybackEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("customerUI", isCustomerUI.toString());
+  }, [isCustomerUI]);
 
   useEffect(() => {
     if (audioElementRef.current) {
@@ -437,87 +452,89 @@ function App() {
   const agentSetKey = searchParams.get("agentConfig") || "default";
 
   return (
-    <div className="text-base flex flex-col h-screen bg-gray-100 text-gray-800 relative">
-      <div className="p-5 text-lg font-semibold flex justify-between items-center">
-        <div
-          className="flex items-center cursor-pointer"
-          onClick={() => window.location.reload()}
-        >
-          <div>
-            <Image
-              src="/openai-logomark.svg"
-              alt="OpenAI Logo"
-              width={20}
-              height={20}
-              className="mr-2"
-            />
-          </div>
-          <div>
-            Realtime API <span className="text-gray-500">Agents</span>
-          </div>
-        </div>
-        <div className="flex items-center">
-          <label className="flex items-center text-base gap-1 mr-2 font-medium">
-            Scenario
-          </label>
-          <div className="relative inline-block">
-            <select
-              value={agentSetKey}
-              onChange={handleAgentChange}
-              className="appearance-none border border-gray-300 rounded-lg text-base px-2 py-1 pr-8 cursor-pointer font-normal focus:outline-none"
-            >
-              {Object.keys(allAgentSets).map((agentKey) => (
-                <option key={agentKey} value={agentKey}>
-                  {agentKey}
-                </option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-gray-600">
-              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                <path
-                  fillRule="evenodd"
-                  d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
-                  clipRule="evenodd"
-                />
-              </svg>
+    <div className={`text-base flex flex-col h-screen ${isCustomerUI ? 'bg-white' : 'bg-gray-100'} text-gray-800 relative`}>
+      {!isCustomerUI && (
+        <div className="p-5 text-lg font-semibold flex justify-between items-center">
+          <div
+            className="flex items-center cursor-pointer"
+            onClick={() => window.location.reload()}
+          >
+            <div>
+              <Image
+                src="/openai-logomark.svg"
+                alt="OpenAI Logo"
+                width={20}
+                height={20}
+                className="mr-2"
+              />
+            </div>
+            <div>
+              Realtime API <span className="text-gray-500">Agents</span>
             </div>
           </div>
-
-          {agentSetKey && (
-            <div className="flex items-center ml-6">
-              <label className="flex items-center text-base gap-1 mr-2 font-medium">
-                Agent
-              </label>
-              <div className="relative inline-block">
-                <select
-                  value={selectedAgentName}
-                  onChange={handleSelectedAgentChange}
-                  className="appearance-none border border-gray-300 rounded-lg text-base px-2 py-1 pr-8 cursor-pointer font-normal focus:outline-none"
-                >
-                  {selectedAgentConfigSet?.map((agent) => (
-                    <option key={agent.name} value={agent.name}>
-                      {agent.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-gray-600">
-                  <svg
-                    className="h-4 w-4"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </div>
+          <div className="flex items-center">
+            <label className="flex items-center text-base gap-1 mr-2 font-medium">
+              Scenario
+            </label>
+            <div className="relative inline-block">
+              <select
+                value={agentSetKey}
+                onChange={handleAgentChange}
+                className="appearance-none border border-gray-300 rounded-lg text-base px-2 py-1 pr-8 cursor-pointer font-normal focus:outline-none"
+              >
+                {Object.keys(allAgentSets).map((agentKey) => (
+                  <option key={agentKey} value={agentKey}>
+                    {agentKey}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-gray-600">
+                <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
               </div>
             </div>
-          )}
+
+            {agentSetKey && (
+              <div className="flex items-center ml-6">
+                <label className="flex items-center text-base gap-1 mr-2 font-medium">
+                  Agent
+                </label>
+                <div className="relative inline-block">
+                  <select
+                    value={selectedAgentName}
+                    onChange={handleSelectedAgentChange}
+                    className="appearance-none border border-gray-300 rounded-lg text-base px-2 py-1 pr-8 cursor-pointer font-normal focus:outline-none"
+                  >
+                    {selectedAgentConfigSet?.map((agent) => (
+                      <option key={agent.name} value={agent.name}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2 text-gray-600">
+                    <svg
+                      className="h-4 w-4"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 10.44l3.71-3.21a.75.75 0 111.04 1.08l-4.25 3.65a.75.75 0 01-1.04 0L5.21 8.27a.75.75 0 01.02-1.06z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-1 gap-2 px-2 overflow-hidden relative">
         <Transcript
@@ -528,9 +545,10 @@ function App() {
           canSend={
             sessionStatus === "CONNECTED"
           }
+          isCustomerUI={isCustomerUI}
         />
 
-        <Events isExpanded={isEventsPaneExpanded} />
+        {!isCustomerUI && <Events isExpanded={isEventsPaneExpanded} />}
       </div>
 
       <BottomToolbar
@@ -547,6 +565,8 @@ function App() {
         setIsAudioPlaybackEnabled={setIsAudioPlaybackEnabled}
         codec={urlCodec}
         onCodecChange={handleCodecChange}
+        isCustomerUI={isCustomerUI}
+        setIsCustomerUI={setIsCustomerUI}
       />
     </div>
   );
