@@ -516,6 +516,13 @@ function Transcript({
                     clearInterval(countdownIntervalRef.current);
                     countdownIntervalRef.current = null;
                   }
+                  
+                  // Clear the responses to show "Connecting..." message
+                  setPersistedAIResponse("");
+                  setPreviousAIResponse("");
+                  setIsTransitioning(false);
+                  lastResponseIdRef.current = "";
+                  
                   if (onReconnect) {
                     onReconnect();
                   }

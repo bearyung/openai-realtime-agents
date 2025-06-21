@@ -78,8 +78,8 @@ const StreamingBlurText: React.FC<StreamingBlurTextProps> = ({
   return (
     <div className={`${className}`}>
       {wordsToDisplay.map((word, index) => {
-        // Create a unique key that changes when a new word appears at this position
-        const uniqueKey = `word-${index}-${word}-${text.substring(0, index * 5)}`;
+        // Create a stable key based only on index and the word itself
+        const uniqueKey = `word-${index}-${word}`;
         
         return (
           <motion.span
