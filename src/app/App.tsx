@@ -143,16 +143,16 @@ function App() {
   useHandleSessionHistory();
 
   useEffect(() => {
-    let finalAgentConfig = searchParams.get("agentConfig");
-    if (!finalAgentConfig || !allAgentSets[finalAgentConfig]) {
-      finalAgentConfig = defaultAgentSetKey;
+    let finalScenario = searchParams.get("scenario");
+    if (!finalScenario || !allAgentSets[finalScenario]) {
+      finalScenario = defaultAgentSetKey;
       const url = new URL(window.location.toString());
-      url.searchParams.set("agentConfig", finalAgentConfig);
+      url.searchParams.set("scenario", finalScenario);
       window.location.replace(url.toString());
       return;
     }
 
-    const agents = allAgentSets[finalAgentConfig];
+    const agents = allAgentSets[finalScenario];
     const agentKeyToUse = agents[0]?.name || "";
 
     setSelectedAgentName(agentKeyToUse);
@@ -204,7 +204,7 @@ function App() {
   };
 
   const connectToRealtime = async () => {
-    const agentSetKey = searchParams.get("agentConfig") || "default";
+    const agentSetKey = searchParams.get("scenario") || "default";
     if (sdkScenarioMap[agentSetKey]) {
       if (sessionStatus !== "DISCONNECTED") return;
       setSessionStatus("CONNECTING");
@@ -337,10 +337,10 @@ function App() {
     }
   };
 
-  const handleAgentChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newAgentConfig = e.target.value;
+  const handleScenarioChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newScenario = e.target.value;
     const url = new URL(window.location.toString());
-    url.searchParams.set("agentConfig", newAgentConfig);
+    url.searchParams.set("scenario", newScenario);
     window.location.replace(url.toString());
   };
 
@@ -450,7 +450,7 @@ function App() {
     };
   }, [sessionStatus]);
 
-  const agentSetKey = searchParams.get("agentConfig") || "default";
+  const agentSetKey = searchParams.get("scenario") || "default";
 
   return (
     <div className={`text-base flex flex-col h-screen ${isCustomerUI ? 'bg-white' : 'bg-gray-100'} text-gray-800 relative`}>
@@ -480,7 +480,7 @@ function App() {
             <div className="relative inline-block">
               <select
                 value={agentSetKey}
-                onChange={handleAgentChange}
+                onChange={handleScenarioChange}
                 className="appearance-none border border-gray-300 rounded-lg text-base px-2 py-1 pr-8 cursor-pointer font-normal focus:outline-none"
               >
                 {Object.keys(allAgentSets).map((agentKey) => (
